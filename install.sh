@@ -152,7 +152,6 @@ enable_wings() {
     print_status "Enabling Wings..."
     
     if [[ "$alternate" == true ]]; then
-        # Check if config file exists and has content
         if [[ -f /etc/pelican/config.yml ]] && [[ -s /etc/pelican/config.yml ]]; then
             print_success "Configuration file found with content - enabling and starting Wings"
             sudo systemctl enable --now wings
@@ -219,6 +218,17 @@ main() {
     print_warning "Installing Pelican Wings on your server..."
     print_warning "Operating System: $OS $VERSION"
     echo ""
+    
+    if [[ "$alternate" == true ]] && [[ -f /etc/pelican/config.yml ]] && [[ -s /etc/pelican/config.yml ]]; then
+        print_status "Re-run detected with existing configuration"
+        if [[ -f /usr/local/bin/wings ]] && [[ -f /etc/systemd/system/wings.service ]]; then
+            print_success "Wings already installed, restarting service..."
+            sudo systemctl enable --now wings
+            sudo systemctl restart wings
+            display_completion
+            exit 0
+        fi
+    fi
     
     install_docker
     install_wings
