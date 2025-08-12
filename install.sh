@@ -1,6 +1,6 @@
 #!/bin/bash
 
-alternate=true
+alternate=false
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -74,6 +74,18 @@ setup_wings() {
     if [[ "$alternate" == true ]]; then
         print_warning "ALTERNATE MODE: Auto Deploy Commands are currently broken in Pelican"
         echo ""
+        
+        if [[ -f /etc/pelican/config.yml ]] && [[ -s /etc/pelican/config.yml ]]; then
+            print_success "Configuration file already exists and contains data"
+            print_warning "Wings will be restarted with the existing configuration"
+            return 0
+        fi
+        
+        sudo touch /etc/pelican/config.yml
+        sudo chmod 600 /etc/pelican/config.yml
+        
+        print_success "Empty configuration file created at /etc/pelican/config.yml"
+        echo ""
         echo "Please follow these steps to manually configure Wings:"
         echo ""
         echo "1. Go to your Pelican Panel"
@@ -81,24 +93,15 @@ setup_wings() {
         echo "3. Create a new Node or select your existing Node"
         echo "4. Go to the 'Configuration' tab"
         echo "5. Copy the entire configuration file content"
-        echo "6. Save it as 'config.yml' in the /etc/pelican/ directory"
+        echo "6. Edit the file: sudo nano /etc/pelican/config.yml"
+        echo "7. Paste your configuration content and save"
         echo ""
-        print_warning "Manual steps required:"
-        echo "   sudo nano /etc/pelican/config.yml"
-        echo "   (Paste your configuration content and save)"
+        print_warning "After adding the configuration, you can:"
+        echo "   - Run this script again to enable and start Wings service"
+        echo "   - Or manually enable the service with:"
+        echo "     sudo systemctl enable --now wings"
+        echo "     sudo systemctl restart wings"
         echo ""
-        echo "Press ENTER after you have completed the manual configuration..."
-        read -r < /dev/tty
-        
-        if [[ ! -f /etc/pelican/config.yml ]]; then
-            print_error "Configuration file not found at /etc/pelican/config.yml"
-            print_warning "Please ensure you have created the config file manually"
-            echo "You can continue with the installation and configure it later"
-            echo "Press ENTER to continue or Ctrl+C to exit..."
-            read -r < /dev/tty
-        else
-            print_success "Configuration file found"
-        fi
         
     else
         echo "Create a Node in your Pelican Panel and go to \"Configuration File\" to create an Auto Deploy Command."
@@ -148,11 +151,20 @@ EOF
 enable_wings() {
     print_status "Enabling Wings..."
     
-    sudo systemctl enable --now wings
-    
     if [[ "$alternate" == true ]]; then
-        print_warning "Note: Wings may fail to start if configuration is not properly set"
-        print_warning "Check status with: sudo systemctl status wings"
+        # Check if config file exists and has content
+        if [[ -f /etc/pelican/config.yml ]] && [[ -s /etc/pelican/config.yml ]]; then
+            print_success "Configuration file found with content - enabling and starting Wings"
+            sudo systemctl enable --now wings
+            sudo systemctl restart wings
+        else
+            print_warning "Empty configuration file detected"
+            print_warning "Wings service will be created but not started until configuration is added"
+            sudo systemctl enable wings
+            return 0
+        fi
+    else
+        sudo systemctl enable --now wings
     fi
     
     print_success "Wings service enabled and started"
@@ -161,22 +173,34 @@ enable_wings() {
 display_completion() {
     print_status "Finished Wings Installation!"
     echo ""
-    print_success "Pelican Wings installation completed successfully!"
-    echo ""
     
     if [[ "$alternate" == true ]]; then
-        print_warning "ALTERNATE MODE was used - Manual configuration required"
+        if [[ -f /etc/pelican/config.yml ]] && [[ -s /etc/pelican/config.yml ]]; then
+            print_success "Pelican Wings installation and configuration completed successfully!"
+            echo ""
+            print_warning "Wings is now running and will automatically start on boot"
+        else
+            print_success "Pelican Wings installation completed!"
+            echo ""
+            print_warning "Configuration file created but is empty"
+            print_warning "Wings service is created but not started yet"
+            echo ""
+            print_warning "Next steps:"
+            echo "   1. Add your configuration to: /etc/pelican/config.yml"
+            echo "   2. Run this script again to start Wings"
+            echo "   3. Or manually start with: sudo systemctl enable --now wings && sudo systemctl restart wings"
+        fi
+    else
+        print_success "Pelican Wings installation completed successfully!"
         echo ""
-        print_warning "If you haven't configured Wings yet:"
-        echo "   1. Edit: sudo nano /etc/pelican/config.yml"
-        echo "   2. Restart Wings: sudo systemctl restart wings"
-        echo ""
+        print_warning "Wings is now running and will automatically start on boot"
     fi
     
-    print_warning "Wings is now running and will automatically start on boot"
     echo ""
-    print_warning "You can check the status with: sudo systemctl status wings"
-    echo "View logs with: sudo journalctl -u wings -f"
+    print_warning "Useful commands:"
+    echo "   Check status: sudo systemctl status wings"
+    echo "   View logs: sudo journalctl -u wings -f"
+    echo "   Restart service: sudo systemctl restart wings"
 }
 
 main() {
