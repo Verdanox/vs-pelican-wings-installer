@@ -1,5 +1,7 @@
 #!/bin/bash
 
+alternate=true
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -67,21 +69,52 @@ install_wings() {
 }
 
 setup_wings() {
-    print_status "Setting Up..."
+    print_status "Setting Up Wings Configuration..."
     
-    echo "Create a Node in your Pelican Panel and go to \"Configuration File\" to create an Auto Deploy Command."
-    echo ""
-    echo -n "What is your Auto Deploy Command?: "
-    read AUTO_DEPLOY_CMD < /dev/tty
-    
-    if [[ -z "$AUTO_DEPLOY_CMD" ]]; then
-        print_error "Auto Deploy Command cannot be empty"
-        exit 1
+    if [[ "$alternate" == true ]]; then
+        print_warning "ALTERNATE MODE: Auto Deploy Commands are currently broken in Pelican"
+        echo ""
+        echo "Please follow these steps to manually configure Wings:"
+        echo ""
+        echo "1. Go to your Pelican Panel"
+        echo "2. Navigate to Nodes"
+        echo "3. Create a new Node or select your existing Node"
+        echo "4. Go to the 'Configuration' tab"
+        echo "5. Copy the entire configuration file content"
+        echo "6. Save it as 'config.yml' in the /etc/pelican/ directory"
+        echo ""
+        print_warning "Manual steps required:"
+        echo "   sudo nano /etc/pelican/config.yml"
+        echo "   (Paste your configuration content and save)"
+        echo ""
+        echo "Press ENTER after you have completed the manual configuration..."
+        read -r < /dev/tty
+        
+        if [[ ! -f /etc/pelican/config.yml ]]; then
+            print_error "Configuration file not found at /etc/pelican/config.yml"
+            print_warning "Please ensure you have created the config file manually"
+            echo "You can continue with the installation and configure it later"
+            echo "Press ENTER to continue or Ctrl+C to exit..."
+            read -r < /dev/tty
+        else
+            print_success "Configuration file found"
+        fi
+        
+    else
+        echo "Create a Node in your Pelican Panel and go to \"Configuration File\" to create an Auto Deploy Command."
+        echo ""
+        echo -n "What is your Auto Deploy Command?: "
+        read AUTO_DEPLOY_CMD < /dev/tty
+        
+        if [[ -z "$AUTO_DEPLOY_CMD" ]]; then
+            print_error "Auto Deploy Command cannot be empty"
+            exit 1
+        fi
+        
+        eval $AUTO_DEPLOY_CMD
+        
+        print_success "Wings configured successfully"
     fi
-    
-    eval $AUTO_DEPLOY_CMD
-    
-    print_success "Wings configured successfully"
 }
 
 create_service() {
@@ -117,6 +150,11 @@ enable_wings() {
     
     sudo systemctl enable --now wings
     
+    if [[ "$alternate" == true ]]; then
+        print_warning "Note: Wings may fail to start if configuration is not properly set"
+        print_warning "Check status with: sudo systemctl status wings"
+    fi
+    
     print_success "Wings service enabled and started"
 }
 
@@ -125,6 +163,16 @@ display_completion() {
     echo ""
     print_success "Pelican Wings installation completed successfully!"
     echo ""
+    
+    if [[ "$alternate" == true ]]; then
+        print_warning "ALTERNATE MODE was used - Manual configuration required"
+        echo ""
+        print_warning "If you haven't configured Wings yet:"
+        echo "   1. Edit: sudo nano /etc/pelican/config.yml"
+        echo "   2. Restart Wings: sudo systemctl restart wings"
+        echo ""
+    fi
+    
     print_warning "Wings is now running and will automatically start on boot"
     echo ""
     print_warning "You can check the status with: sudo systemctl status wings"
@@ -134,6 +182,11 @@ display_completion() {
 main() {
     echo -e "${BLUE}--------PELICAN WINGS INSTALLATION SCRIPT--------${NC}"
     echo -e "${GREEN}Made by: Verdanox${NC}"
+    
+    if [[ "$alternate" == true ]]; then
+        echo -e "${YELLOW}Running in ALTERNATE MODE${NC}"
+    fi
+    
     echo ""
     
     check_root
