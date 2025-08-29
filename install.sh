@@ -255,7 +255,7 @@ setup_wings() {
             exit 1
         fi
         
-        eval $AUTO_DEPLOY_CMD
+        bash -c "$AUTO_DEPLOY_CMD"
         
         print_success "Wings configured successfully"
     fi
