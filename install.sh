@@ -97,7 +97,7 @@ upgrade_downgrade_wings() {
     echo "1. Latest (default)"
     echo "2. Specific version"
     echo ""
-    echo -n "Select option (1-2): "
+    printf "Select option (1-2): "
     read version_choice < /dev/tty
     
     case $version_choice in
@@ -111,7 +111,7 @@ upgrade_downgrade_wings() {
             print_success "Wings upgraded to latest version"
             ;;
         2)
-            echo -n "Enter version (e.g., v1.0.0): "
+            printf "Enter version (e.g., v1.0.0): "
             read specific_version < /dev/tty
             
             if [[ -z "$specific_version" ]]; then
@@ -153,14 +153,14 @@ show_management_panel() {
     echo "3. Upgrade/Downgrade Wings"
     echo "4. Exit"
     echo ""
-    echo -n "Select option (1-4): "
+    printf "Select option (1-4): "
     read choice < /dev/tty
     
     case $choice in
         1)
             echo ""
             print_warning "This will completely remove Wings, Docker, and all server data!"
-            echo -n "Are you sure? (y/N): "
+            printf "Are you sure? (y/N): "
             read confirm < /dev/tty
             
             if [[ "$confirm" =~ ^[Yy]$ ]]; then
@@ -247,7 +247,7 @@ setup_wings() {
     else
         echo "Create a Node in your Pelican Panel and go to \"Configuration File\" to create an Auto Deploy Command."
         echo ""
-        echo -n "What is your Auto Deploy Command?: "
+        printf "What is your Auto Deploy Command?: "
         read AUTO_DEPLOY_CMD < /dev/tty
         
         if [[ -z "$AUTO_DEPLOY_CMD" ]]; then
