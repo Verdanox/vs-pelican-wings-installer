@@ -47,6 +47,147 @@ detect_os() {
     fi
 }
 
+check_wings_installation() {
+    if [[ -f /usr/local/bin/wings ]] && [[ -f /etc/systemd/system/wings.service ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+uninstall_wings() {
+    print_status "Uninstalling Wings..."
+    
+    sudo systemctl disable --now wings
+    sudo rm -f /etc/systemd/system/wings.service
+    sudo rm -f /usr/local/bin/wings
+    sudo rm -rf /etc/pelican
+    
+    print_status "Removing Servers..."
+    sudo rm -rf /var/lib/pelican
+    
+    print_status "Uninstalling docker..."
+    sudo systemctl stop docker
+    sudo apt remove --purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    sudo apt autoremove -y
+    sudo rm -rf /var/lib/docker /var/lib/containerd
+    
+    print_status "Wings successfully uninstalled."
+}
+
+update_wings() {
+    print_status "Updating Wings..."
+    
+    sudo systemctl stop wings
+    
+    ARCH=$([[ "$(uname -m)" == "x86_64" ]] && echo "amd64" || echo "arm64")
+    sudo curl -L -o /usr/local/bin/wings "https://github.com/pelican-dev/wings/releases/latest/download/wings_linux_$ARCH"
+    
+    sudo chmod u+x /usr/local/bin/wings
+    
+    sudo systemctl start wings
+    
+    print_success "Wings updated successfully"
+}
+
+upgrade_downgrade_wings() {
+    print_status "Upgrade/Downgrade Wings..."
+    
+    echo "Available versions:"
+    echo "1. Latest (default)"
+    echo "2. Specific version"
+    echo ""
+    echo -n "Select option (1-2): "
+    read version_choice < /dev/tty
+    
+    case $version_choice in
+        1|"")
+            print_status "Installing latest version..."
+            ARCH=$([[ "$(uname -m)" == "x86_64" ]] && echo "amd64" || echo "arm64")
+            sudo systemctl stop wings
+            sudo curl -L -o /usr/local/bin/wings "https://github.com/pelican-dev/wings/releases/latest/download/wings_linux_$ARCH"
+            sudo chmod u+x /usr/local/bin/wings
+            sudo systemctl start wings
+            print_success "Wings upgraded to latest version"
+            ;;
+        2)
+            echo -n "Enter version (e.g., v1.0.0): "
+            read specific_version < /dev/tty
+            
+            if [[ -z "$specific_version" ]]; then
+                print_error "Version cannot be empty"
+                return 1
+            fi
+            
+            print_status "Installing version $specific_version..."
+            ARCH=$([[ "$(uname -m)" == "x86_64" ]] && echo "amd64" || echo "arm64")
+            sudo systemctl stop wings
+            sudo curl -L -o /usr/local/bin/wings "https://github.com/pelican-dev/wings/releases/download/$specific_version/wings_linux_$ARCH"
+            
+            if [[ $? -ne 0 ]]; then
+                print_error "Failed to download version $specific_version"
+                print_warning "Restoring service..."
+                sudo systemctl start wings
+                return 1
+            fi
+            
+            sudo chmod u+x /usr/local/bin/wings
+            sudo systemctl start wings
+            print_success "Wings changed to version $specific_version"
+            ;;
+        *)
+            print_error "Invalid option"
+            return 1
+            ;;
+    esac
+}
+
+show_management_panel() {
+    echo -e "${BLUE}--------PELICAN WINGS MANAGEMENT PANEL--------${NC}"
+    echo -e "${GREEN}Made by: Verdanox${NC}"
+    echo ""
+    print_success "Wings installation detected!"
+    echo ""
+    echo "1. Uninstall Wings"
+    echo "2. Update Wings"
+    echo "3. Upgrade/Downgrade Wings"
+    echo "4. Exit"
+    echo ""
+    echo -n "Select option (1-4): "
+    read choice < /dev/tty
+    
+    case $choice in
+        1)
+            echo ""
+            print_warning "This will completely remove Wings, Docker, and all server data!"
+            echo -n "Are you sure? (y/N): "
+            read confirm < /dev/tty
+            
+            if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                uninstall_wings
+            else
+                print_warning "Uninstallation cancelled"
+            fi
+            ;;
+        2)
+            echo ""
+            update_wings
+            ;;
+        3)
+            echo ""
+            upgrade_downgrade_wings
+            ;;
+        4)
+            print_warning "Exiting..."
+            exit 0
+            ;;
+        *)
+            print_error "Invalid option"
+            show_management_panel
+            ;;
+    esac
+}
+
 install_docker() {
     print_status "Installing Docker..."
     
@@ -203,6 +344,14 @@ display_completion() {
 }
 
 main() {
+    check_root
+    detect_os
+    
+    if check_wings_installation; then
+        show_management_panel
+        exit 0
+    fi
+    
     echo -e "${BLUE}--------PELICAN WINGS INSTALLATION SCRIPT--------${NC}"
     echo -e "${GREEN}Made by: Verdanox${NC}"
     
@@ -211,9 +360,6 @@ main() {
     fi
     
     echo ""
-    
-    check_root
-    detect_os
     
     print_warning "Installing Pelican Wings on your server..."
     print_warning "Operating System: $OS $VERSION"
