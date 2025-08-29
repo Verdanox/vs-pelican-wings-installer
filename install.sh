@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
 
 alternate=true
 
@@ -8,21 +10,10 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-print_status() {
-    echo -e "${BLUE}--------$1--------${NC}"
-}
-
-print_success() {
-    echo -e "${GREEN}✓ $1${NC}"
-}
-
-print_error() {
-    echo -e "${RED}✗ $1${NC}"
-}
-
-print_warning() {
-    echo -e "${YELLOW}⚠ $1${NC}"
-}
+print_status() { echo -e "${BLUE}--------$1--------${NC}"; }
+print_success() { echo -e "${GREEN}✓ $1${NC}"; }
+print_error() { echo -e "${RED}✗ $1${NC}"; }
+print_warning() { echo -e "${YELLOW}⚠ $1${NC}"; }
 
 check_root() {
     if [[ $EUID -ne 0 ]]; then
@@ -40,7 +31,7 @@ detect_os() {
         print_error "Cannot detect operating system"
         exit 1
     fi
-    
+
     if [[ "$OS" != *"Ubuntu"* ]] && [[ "$OS" != *"Debian"* ]]; then
         print_error "This script only supports Ubuntu and Debian"
         exit 1
@@ -57,83 +48,69 @@ check_wings_installation() {
 
 uninstall_wings() {
     print_status "Uninstalling Wings..."
-    
-    sudo systemctl disable --now wings
+    sudo systemctl disable --now wings || true
     sudo rm -f /etc/systemd/system/wings.service
     sudo rm -f /usr/local/bin/wings
     sudo rm -rf /etc/pelican
-    
     print_status "Removing Servers..."
     sudo rm -rf /var/lib/pelican
-    
     print_status "Uninstalling docker..."
-    sudo systemctl stop docker
-    sudo apt remove --purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-    sudo apt autoremove -y
+    sudo systemctl stop docker || true
+    sudo apt remove --purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || true
+    sudo apt autoremove -y || true
     sudo rm -rf /var/lib/docker /var/lib/containerd
-    
     print_status "Wings successfully uninstalled."
 }
 
 update_wings() {
     print_status "Updating Wings..."
-    
-    sudo systemctl stop wings
-    
+    sudo systemctl stop wings || true
     ARCH=$([[ "$(uname -m)" == "x86_64" ]] && echo "amd64" || echo "arm64")
-    sudo curl -L -o /usr/local/bin/wings "https://github.com/pelican-dev/wings/releases/latest/download/wings_linux_$ARCH"
-    
-    sudo chmod u+x /usr/local/bin/wings
-    
-    sudo systemctl start wings
-    
-    print_success "Wings updated successfully"
+    TMPFILE=$(mktemp)
+    if curl -fL "https://github.com/pelican-dev/wings/releases/latest/download/wings_linux_$ARCH" -o "$TMPFILE"; then
+        sudo mv "$TMPFILE" /usr/local/bin/wings
+        sudo chmod u+x /usr/local/bin/wings
+        sudo systemctl start wings || true
+        print_success "Wings updated successfully"
+    else
+        rm -f "$TMPFILE"
+        print_error "Failed to download Wings (update). Check network/URL."
+        return 1
+    fi
 }
 
 upgrade_downgrade_wings() {
     print_status "Upgrade/Downgrade Wings..."
-    
     echo "Available versions:"
     echo "1. Latest (default)"
     echo "2. Specific version"
     echo ""
     printf "Select option (1-2): "
     read version_choice < /dev/tty
-    
     case $version_choice in
         1|"")
-            print_status "Installing latest version..."
-            ARCH=$([[ "$(uname -m)" == "x86_64" ]] && echo "amd64" || echo "arm64")
-            sudo systemctl stop wings
-            sudo curl -L -o /usr/local/bin/wings "https://github.com/pelican-dev/wings/releases/latest/download/wings_linux_$ARCH"
-            sudo chmod u+x /usr/local/bin/wings
-            sudo systemctl start wings
-            print_success "Wings upgraded to latest version"
+            update_wings
             ;;
         2)
             printf "Enter version (e.g., v1.0.0): "
             read specific_version < /dev/tty
-            
             if [[ -z "$specific_version" ]]; then
                 print_error "Version cannot be empty"
                 return 1
             fi
-            
-            print_status "Installing version $specific_version..."
             ARCH=$([[ "$(uname -m)" == "x86_64" ]] && echo "amd64" || echo "arm64")
-            sudo systemctl stop wings
-            sudo curl -L -o /usr/local/bin/wings "https://github.com/pelican-dev/wings/releases/download/$specific_version/wings_linux_$ARCH"
-            
-            if [[ $? -ne 0 ]]; then
+            TMPFILE=$(mktemp)
+            if curl -fL "https://github.com/pelican-dev/wings/releases/download/$specific_version/wings_linux_$ARCH" -o "$TMPFILE"; then
+                sudo systemctl stop wings || true
+                sudo mv "$TMPFILE" /usr/local/bin/wings
+                sudo chmod u+x /usr/local/bin/wings
+                sudo systemctl start wings || true
+                print_success "Wings changed to version $specific_version"
+            else
+                rm -f "$TMPFILE"
                 print_error "Failed to download version $specific_version"
-                print_warning "Restoring service..."
-                sudo systemctl start wings
                 return 1
             fi
-            
-            sudo chmod u+x /usr/local/bin/wings
-            sudo systemctl start wings
-            print_success "Wings changed to version $specific_version"
             ;;
         *)
             print_error "Invalid option"
@@ -155,14 +132,12 @@ show_management_panel() {
     echo ""
     printf "Select option (1-4): "
     read choice < /dev/tty
-    
     case $choice in
         1)
             echo ""
             print_warning "This will completely remove Wings, Docker, and all server data!"
             printf "Are you sure? (y/N): "
             read confirm < /dev/tty
-            
             if [[ "$confirm" =~ ^[Yy]$ ]]; then
                 uninstall_wings
             else
@@ -190,41 +165,46 @@ show_management_panel() {
 
 install_docker() {
     print_status "Installing Docker..."
-    
-    curl -sSL https://get.docker.com/ | CHANNEL=stable sudo sh
-    
-    print_success "Docker installed successfully"
+    TMPFILE=$(mktemp)
+    if curl -fL https://get.docker.com -o "$TMPFILE"; then
+        sudo CHANNEL=stable sh "$TMPFILE"
+        rm -f "$TMPFILE"
+        print_success "Docker installed successfully"
+    else
+        rm -f "$TMPFILE"
+        print_error "Failed to download Docker install script. Check network/URL."
+        exit 1
+    fi
 }
 
 install_wings() {
     print_status "Installing Wings..."
-    
     sudo mkdir -p /etc/pelican /var/run/wings
-    
     ARCH=$([[ "$(uname -m)" == "x86_64" ]] && echo "amd64" || echo "arm64")
-    sudo curl -L -o /usr/local/bin/wings "https://github.com/pelican-dev/wings/releases/latest/download/wings_linux_$ARCH"
-    
-    sudo chmod u+x /usr/local/bin/wings
-    
-    print_success "Wings binary installed successfully"
+    TMPFILE=$(mktemp)
+    if curl -fL "https://github.com/pelican-dev/wings/releases/latest/download/wings_linux_$ARCH" -o "$TMPFILE"; then
+        sudo mv "$TMPFILE" /usr/local/bin/wings
+        sudo chmod u+x /usr/local/bin/wings
+        print_success "Wings binary installed successfully"
+    else
+        rm -f "$TMPFILE"
+        print_error "Failed to download Wings binary. Check network/URL."
+        exit 1
+    fi
 }
 
 setup_wings() {
     print_status "Setting Up Wings Configuration..."
-    
     if [[ "$alternate" == true ]]; then
         print_warning "ALTERNATE MODE: Auto Deploy Commands are currently broken in Pelican"
         echo ""
-        
         if [[ -f /etc/pelican/config.yml ]] && [[ -s /etc/pelican/config.yml ]]; then
             print_success "Configuration file already exists and contains data"
             print_warning "Wings will be restarted with the existing configuration"
             return 0
         fi
-        
         sudo touch /etc/pelican/config.yml
         sudo chmod 600 /etc/pelican/config.yml
-        
         print_success "Empty configuration file created at /etc/pelican/config.yml"
         echo ""
         echo "Please follow these steps to manually configure Wings:"
@@ -243,27 +223,22 @@ setup_wings() {
         echo "     sudo systemctl enable --now wings"
         echo "     sudo systemctl restart wings"
         echo ""
-        
     else
         echo "Create a Node in your Pelican Panel and go to \"Configuration File\" to create an Auto Deploy Command."
         echo ""
         printf "What is your Auto Deploy Command?: "
         read AUTO_DEPLOY_CMD < /dev/tty
-        
-        if [[ -z "$AUTO_DEPLOY_CMD" ]]; then
+        if [[ -z "${AUTO_DEPLOY_CMD:-}" ]]; then
             print_error "Auto Deploy Command cannot be empty"
             exit 1
         fi
-        
         bash -c "$AUTO_DEPLOY_CMD"
-        
         print_success "Wings configured successfully"
     fi
 }
 
 create_service() {
     print_status "Creating Service..."
-    
     sudo tee /etc/systemd/system/wings.service > /dev/null << EOF
 [Unit]
 Description=Wings Daemon
@@ -285,35 +260,31 @@ RestartSec=5s
 [Install]
 WantedBy=multi-user.target
 EOF
-    
     print_success "Wings service file created"
 }
 
 enable_wings() {
     print_status "Enabling Wings..."
-    
     if [[ "$alternate" == true ]]; then
         if [[ -f /etc/pelican/config.yml ]] && [[ -s /etc/pelican/config.yml ]]; then
             print_success "Configuration file found with content - enabling and starting Wings"
             sudo systemctl enable --now wings
-            sudo systemctl restart wings
+            sudo systemctl restart wings || true
         else
             print_warning "Empty configuration file detected"
             print_warning "Wings service will be created but not started until configuration is added"
-            sudo systemctl enable wings
+            sudo systemctl enable wings || true
             return 0
         fi
     else
-        sudo systemctl enable --now wings
+        sudo systemctl enable --now wings || true
     fi
-    
     print_success "Wings service enabled and started"
 }
 
 display_completion() {
     print_status "Finished Wings Installation!"
     echo ""
-    
     if [[ "$alternate" == true ]]; then
         if [[ -f /etc/pelican/config.yml ]] && [[ -s /etc/pelican/config.yml ]]; then
             print_success "Pelican Wings installation and configuration completed successfully!"
@@ -335,7 +306,6 @@ display_completion() {
         echo ""
         print_warning "Wings is now running and will automatically start on boot"
     fi
-    
     echo ""
     print_warning "Useful commands:"
     echo "   Check status: sudo systemctl status wings"
@@ -346,36 +316,29 @@ display_completion() {
 main() {
     check_root
     detect_os
-    
     if check_wings_installation; then
         show_management_panel
         exit 0
     fi
-    
     echo -e "${BLUE}--------PELICAN WINGS INSTALLATION SCRIPT--------${NC}"
     echo -e "${GREEN}Made by: Verdanox${NC}"
-    
     if [[ "$alternate" == true ]]; then
         echo -e "${YELLOW}Running in ALTERNATE MODE${NC}"
     fi
-    
     echo ""
-    
     print_warning "Installing Pelican Wings on your server..."
     print_warning "Operating System: $OS $VERSION"
     echo ""
-    
     if [[ "$alternate" == true ]] && [[ -f /etc/pelican/config.yml ]] && [[ -s /etc/pelican/config.yml ]]; then
         print_status "Re-run detected with existing configuration"
         if [[ -f /usr/local/bin/wings ]] && [[ -f /etc/systemd/system/wings.service ]]; then
             print_success "Wings already installed, restarting service..."
-            sudo systemctl enable --now wings
-            sudo systemctl restart wings
+            sudo systemctl enable --now wings || true
+            sudo systemctl restart wings || true
             display_completion
             exit 0
         fi
     fi
-    
     install_docker
     install_wings
     setup_wings
